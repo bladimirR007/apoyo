@@ -1,1 +1,548 @@
 
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Filtro de Trámites - Excel</title>
+    <link rel="stylesheet" href="https://pyscript.net/releases/2024.1.1/core.css" />
+    <script type="module" src="https://pyscript.net/releases/2024.1.1/core.js"></script>
+    <style>
+        body {
+            font-family: system-ui, -apple-system, sans-serif;
+            max-width: 1100px;
+            margin: 2rem auto;
+            padding: 1rem 1.5rem;
+            color: #24292e;
+            background: #f6f8fa;
+        }
+        h1 { margin-bottom: 0.3rem; }
+        .card {
+            background: white;
+            border: 1px solid #d0d7de;
+            border-radius: 10px;
+            padding: 1.5rem;
+            margin-bottom: 1.5rem;
+            box-shadow: 0 1px 3px rgba(0,0,0,0.04);
+        }
+        #file-input {
+            margin: 0.5rem 0;
+            padding: 0.6rem;
+            border: 1px dashed #d0d7de;
+            border-radius: 6px;
+            width: 100%;
+            box-sizing: border-box;
+        }
+        button {
+            padding: 0.7rem 1.4rem;
+            background: #2ea44f;
+            color: white;
+            border: none;
+            border-radius: 6px;
+            cursor: pointer;
+            font-size: 1rem;
+            font-weight: 600;
+            margin-right: 0.5rem;
+            margin-bottom: 0.4rem;
+        }
+        button:hover { background: #22863a; }
+        button:disabled { background: #94d3a2; cursor: not-allowed; }
+        #download-btn { background: #0366d6; }
+        #download-btn:hover { background: #0250a3; }
+        #copy-btn { background: #6f42c1; }
+        #copy-btn:hover { background: #5a32a3; }
+        .turno {
+            background: #ffffff;
+            color: #24292e;
+            padding: 1.2rem;
+            border-radius: 8px;
+            border: 1px solid #d0d7de;
+            font-family: 'SF Mono', Consolas, monospace;
+            font-size: 0.85rem;
+            white-space: pre-wrap;
+            max-height: 700px;
+            overflow-y: auto;
+        }
+        .status {
+            font-weight: 600;
+            margin-bottom: 0.8rem;
+            color: #57606a;
+        }
+        .status.ok { color: #1a7f37; }
+        .status.error { color: #cf222e; }
+        .status.loading { color: #9a6700; }
+        #loading {
+            display: none;
+            color: #9a6700;
+            font-style: italic;
+            margin-top: 0.5rem;
+        }
+        .stats {
+            display: flex;
+            gap: 1rem;
+            flex-wrap: wrap;
+        }
+        .stat {
+            flex: 1;
+            min-width: 200px;
+            background: #ddf4ff;
+            border-left: 4px solid #0969da;
+            padding: 0.8rem;
+            border-radius: 6px;
+        }
+        .stat strong { display: block; font-size: 1.4rem; color: #0969da; }
+        .stat.verde { background: #dafbe1; border-left-color: #2ea44f; }
+        .stat.verde strong { color: #1a7f37; }
+        .stat.naranja { background: #fff8c5; border-left-color: #d4a72c; }
+        .stat.naranja strong { color: #7d4e00; }
+        .stat.morado { background: #f3e5ff; border-left-color: #8250df; }
+        .stat.morado strong { color: #6f42c1; }
+        .config-row {
+            display: flex;
+            gap: 1rem;
+            flex-wrap: wrap;
+            margin: 0.8rem 0;
+        }
+        .config-row label {
+            display: flex;
+            flex-direction: column;
+            font-size: 0.85rem;
+            font-weight: 600;
+            color: #57606a;
+            flex: 1;
+            min-width: 220px;
+        }
+        .config-row input {
+            margin-top: 0.3rem;
+            padding: 0.5rem;
+            border: 1px solid #d0d7de;
+            border-radius: 6px;
+            font-size: 0.95rem;
+        }
+    </style>
+</head>
+<body>
+
+    <h1>📊 ENTREGA DE TURNO</h1>
+    <p>Filtra registros y genera una <strong>entrega de turno</strong> formateada.</p>
+
+    <div class="card">
+        <label for="file-input"><strong>1. Selecciona el archivo Excel (.xlsx):</strong></label>
+        <input type="file" id="file-input" accept=".xlsx,.xls" />
+
+        <div class="config-row">
+            <label>
+                Aux. Referencia (quien entrega):
+                <input type="text" id="aux-referencia" value="BLADIMIR REALES" />
+            </label>
+            <label>
+                Recibe Aux Referencia:
+                <input type="text" id="recibe-aux"/>
+            </label>
+        </div>
+
+        <div id="loading">⏳ Cargando Python y procesando... (la primera vez tarda unos segundos)</div>
+        <div style="margin-top: 0.5rem;">
+            <button id="process-btn">Procesar archivo</button>
+            <button id="download-btn" style="display:none;">⬇️ Descargar Excel</button>
+            <button id="copy-btn" style="display:none;">📋 Copiar entrega</button>
+        </div>
+    </div>
+
+    <div class="card">
+        <div id="stats" class="stats" style="display:none;"></div>
+    </div>
+
+    <div class="card">
+        <div id="status" class="status">Esperando archivo...</div>
+    </div>
+
+    <div class="card">
+        <h2 style="margin:0 0 0.8rem 0; font-size: 1.1rem;">📝 Entrega de turno</h2>
+        <div id="turno" class="turno">Aquí verás la entrega de turno generada.</div>
+    </div>
+
+    <py-config>
+        packages = ["openpyxl"]
+    </py-config>
+
+    <script type="py">
+import openpyxl
+from io import BytesIO
+from js import document, Uint8Array, window, console
+from pyodide.ffi import create_proxy
+
+# ---------- Estado global ----------
+resultado_bytes = None
+texto_turno = ""
+
+
+# ---------- Utilidades ----------
+def set_status(msg, tipo="ok"):
+    el = document.getElementById("status")
+    el.innerText = msg
+    el.className = "status " + tipo
+
+
+def set_turno(msg):
+    document.getElementById("turno").innerText = msg
+
+
+def mostrar_loading(show):
+    document.getElementById("loading").style.display = "block" if show else "none"
+
+
+async def leer_archivo():
+    file_input = document.getElementById("file-input")
+    if not file_input.files.length:
+        return None
+    file = file_input.files.item(0)
+    buffer = await file.arrayBuffer()
+    data = Uint8Array.new(buffer).to_py()
+    return BytesIO(bytes(data))
+
+
+def crear_stat(container, valor, texto, clase_extra=""):
+    d = document.createElement("div")
+    d.className = "stat " + clase_extra
+    s = document.createElement("strong")
+    s.innerText = str(valor)
+    d.appendChild(s)
+    d.appendChild(document.createTextNode(texto))
+    container.appendChild(d)
+
+
+def fecha_actual_formateada():
+    from js import Date
+    d = Date.new()
+    dia = str(d.getDate()).zfill(2)
+    mes = str(d.getMonth() + 1).zfill(2)
+    anio = d.getFullYear()
+    hora = str(d.getHours()).zfill(2)
+    minuto = str(d.getMinutes()).zfill(2)
+    return f"{dia}/{mes}/{anio} {hora}:{minuto}"
+
+
+# ---------- Normalización de texto ----------
+def norm(v):
+    if v is None:
+        return ""
+    s = str(v)
+    s = s.replace("\u00A0", " ").replace("\n", " ").replace("\r", " ").replace("\t", " ")
+    s = " ".join(s.split())
+    return s.strip().upper()
+
+
+def formatear_fila(fila):
+    partes = []
+    for v in fila:
+        if v is None or str(v).strip() == "":
+            continue
+        partes.append(str(v).strip())
+    # Salto de línea final para separar cada paciente
+    return "\t".join(partes) + "\n"
+
+
+# ---------- Lógica principal ----------
+async def procesar_archivo(event=None):
+    global resultado_bytes, texto_turno
+
+    mostrar_loading(True)
+    set_status("⏳ Procesando archivo...", "loading")
+    set_turno("Generando...")
+    document.getElementById("download-btn").style.display = "none"
+    document.getElementById("copy-btn").style.display = "none"
+    document.getElementById("stats").style.display = "none"
+
+    try:
+        bytes_io = await leer_archivo()
+        if bytes_io is None:
+            set_status("⚠️ Selecciona primero un archivo Excel.", "error")
+            set_turno("")
+            mostrar_loading(False)
+            return
+
+        # ========== CARGA DEL EXCEL ==========
+        wb = openpyxl.load_workbook(bytes_io)
+        ws = wb.active
+
+        # --- Nombres de columnas a buscar ---
+        columna_filtro1 = "TRAMITE CERRADO/ABIERTO"
+        valor_filtro1 = "Tramite en proceso"
+
+        columna_filtro2 = "OBSERVACION"
+        valor_filtro2 = "URGENCIA VITAL"
+
+        columna_filtro3 = "TIPO DE TRAMITE"
+
+        columna_filtro4 = "ESTADO DEL TRAMITE"
+
+        tipo_remision = "REMISION"
+        tipo_cita = "CITA"
+
+        COL_FIN_EXCEL = 26
+        COL_FIN_SALIDA = 13
+
+        # ---------- Encabezados ----------
+        headers_full = []
+        for i in range(1, COL_FIN_EXCEL + 1):
+            cell = ws.cell(row=1, column=i)
+            headers_full.append(cell.value if cell.value is not None else ("COL_" + str(i)))
+
+        headers_salida = headers_full[:COL_FIN_SALIDA]
+
+        # ---------- Detección de índices ----------
+        idx_por_nombre = {}
+        for i, cell in enumerate(ws[1], start=1):
+            key = norm(cell.value)
+            if key and key not in idx_por_nombre:
+                idx_por_nombre[key] = i
+
+        filtro_index1 = idx_por_nombre.get(norm(columna_filtro1))
+        filtro_index2 = idx_por_nombre.get(norm(columna_filtro2))
+        filtro_index3 = idx_por_nombre.get(norm(columna_filtro3))
+        filtro_index4 = idx_por_nombre.get(norm(columna_filtro4))
+
+        if filtro_index1 is None:
+            raise ValueError("No se encontró la columna '" + columna_filtro1 + "'")
+        if filtro_index2 is None:
+            raise ValueError("No se encontró la columna '" + columna_filtro2 + "'")
+        if filtro_index3 is None:
+            raise ValueError("No se encontró la columna '" + columna_filtro3 + "'")
+        if filtro_index4 is None:
+            raise ValueError("No se encontró la columna '" + columna_filtro4 + "'")
+
+        idx_estado_tramite = filtro_index4
+        idx_tipo_tramite = filtro_index3
+
+        def extraer_fila(row, limite):
+            fila = []
+            for i in range(1, limite + 1):
+                fila.append(row[i - 1] if (i - 1) < len(row) else None)
+            return fila
+
+        # ---------- FILTROS ----------
+        resumen_filtro1 = []              # REMISION + En proceso
+        resumen_filtro2 = []              # URGENCIA VITAL + REMISION + En proceso
+        resumen_remisiones_con_estado = [] # REMISION + En proceso + ESTADO no vacío
+        resumen_citas_tramite = []        # CITA + En proceso
+        resumen_citas_con_estado = []     # CITA + En proceso + ESTADO no vacío
+
+        for row in ws.iter_rows(min_row=2, values_only=True):
+            v1 = row[filtro_index1 - 1] if (filtro_index1 - 1) < len(row) else None
+            v2 = row[filtro_index2 - 1] if (filtro_index2 - 1) < len(row) else None
+            v3 = row[filtro_index3 - 1] if (filtro_index3 - 1) < len(row) else None
+            v4 = row[filtro_index4 - 1] if (filtro_index4 - 1) < len(row) else None
+
+            n1 = norm(v1)
+            n2 = norm(v2)
+            n3 = norm(v3)
+            n4 = norm(v4)
+
+            en_proceso = (n1 == norm(valor_filtro1))
+            es_remision = (n3 == norm(tipo_remision))
+            es_cita = (n3 == norm(tipo_cita))
+            # "ESTADO no vacío" = la celda tiene cualquier contenido
+            estado_con_dato = (n4 != "")
+
+            # Remisiones
+            if en_proceso and es_remision:
+                resumen_filtro1.append(extraer_fila(row, COL_FIN_EXCEL))
+
+            if (n2 and norm(valor_filtro2) in n2) and es_remision and en_proceso:
+                resumen_filtro2.append(extraer_fila(row, COL_FIN_EXCEL))
+
+            if es_remision and en_proceso and estado_con_dato:
+                resumen_remisiones_con_estado.append(extraer_fila(row, COL_FIN_EXCEL))
+
+            # Citas
+            if es_cita and en_proceso:
+                resumen_citas_tramite.append(extraer_fila(row, COL_FIN_EXCEL))
+
+            if es_cita and en_proceso and estado_con_dato:
+                resumen_citas_con_estado.append(extraer_fila(row, COL_FIN_EXCEL))
+
+        contador1 = len(resumen_filtro1)
+        contador2 = len(resumen_filtro2)
+        contador3 = len(resumen_remisiones_con_estado)
+        contador_citas_tramite = len(resumen_citas_tramite)
+        contador_citas_asignadas = len(resumen_citas_con_estado)
+
+        # ---------- ACEPTADOS (remisiones con ESTADO no vacío) ----------
+        aceptados_general = []
+        vistos = set()
+        for f in resumen_remisiones_con_estado:
+            clave = tuple(str(x) for x in f)
+            if clave not in vistos:
+                vistos.add(clave)
+                aceptados_general.append(f)
+        total_aceptados_general = len(aceptados_general)
+
+        # ---------- Total remisiones ----------
+        claves = set()
+        for f in resumen_filtro1 + resumen_filtro2 + resumen_remisiones_con_estado:
+            claves.add(tuple(str(x) for x in f))
+        total_remisiones = len(claves)
+
+        # ========== EXCEL DE SALIDA ==========
+        wb_out = openpyxl.Workbook()
+        ws1 = wb_out.active
+        ws1.title = "Remisiones en proceso"
+        ws2 = wb_out.create_sheet("Urgencia Vital")
+        ws3 = wb_out.create_sheet("Remisiones con estado")
+        ws4 = wb_out.create_sheet("Citas en tramite")
+        ws5 = wb_out.create_sheet("Citas con estado")
+
+        ws1.append(headers_salida)
+        ws2.append(headers_salida)
+        ws3.append(headers_salida)
+        ws4.append(headers_salida)
+        ws5.append(headers_salida)
+
+        for fila in resumen_filtro1:
+            ws1.append(fila[:COL_FIN_SALIDA])
+        for fila in resumen_filtro2:
+            ws2.append(fila[:COL_FIN_SALIDA])
+        for fila in resumen_remisiones_con_estado:
+            ws3.append(fila[:COL_FIN_SALIDA])
+        for fila in resumen_citas_tramite:
+            ws4.append(fila[:COL_FIN_SALIDA])
+        for fila in resumen_citas_con_estado:
+            ws5.append(fila[:COL_FIN_SALIDA])
+
+        buffer_out = BytesIO()
+        wb_out.save(buffer_out)
+        resultado_bytes = buffer_out.getvalue()
+
+        # ========== ENTREGA DE TURNO ==========
+        aux_ref = document.getElementById("aux-referencia").value or "(sin especificar)"
+        recibe_aux = document.getElementById("recibe-aux").value or "(sin especificar)"
+        fecha_hora = fecha_actual_formateada()
+
+        lineas = []
+        lineas.append("*Entrega de turno* " + fecha_hora)
+        lineas.append("")
+        lineas.append("*Aux. Referencia:* " + aux_ref)
+        lineas.append("")
+        lineas.append("*Total remisiones:* " + str(total_remisiones))
+        lineas.append("")
+        lineas.append("*Aceptados:* " + str(total_aceptados_general))
+        lineas.append("")
+        for f in aceptados_general[:50]:
+            lineas.append(formatear_fila(f[:COL_FIN_SALIDA]))
+
+        lineas.append("")
+        lineas.append("")
+        lineas.append("*URGENCIAS VITAL:* " + str(contador2).zfill(2))
+        lineas.append("")
+        for f in resumen_filtro2[:50]:
+            lineas.append(formatear_fila(f[:COL_FIN_SALIDA]))
+
+        lineas.append("")
+        lineas.append("")
+        # CITAS EN TRAMITE: solo el número total
+        lineas.append("*CITAS EN TRAMITE:* " + str(contador_citas_tramite))
+
+        lineas.append("")
+        lineas.append("")
+        lineas.append("*PACIENTES CON CITA ASIGNADAS:* " + str(contador_citas_asignadas))
+        lineas.append("")
+        for f in resumen_citas_con_estado[:50]:
+            lineas.append(formatear_fila(f[:COL_FIN_SALIDA]))
+
+        lineas.append("")
+        lineas.append("")
+        lineas.append("*CORREO SIN TRAMITES POR APERTURA:*")
+        lineas.append("")
+        lineas.append("*HOSVITAL PACIENTES  PARA  INICIO DE CONTRAREMISION:* 0")
+        lineas.append("")
+        lineas.append("*Recibe Aux Referencia:* " + recibe_aux)
+
+        texto_turno = "\n".join(lineas)
+        set_turno(texto_turno)
+
+        # ========== ESTADÍSTICAS ==========
+        stats_el = document.getElementById("stats")
+        while stats_el.firstChild:
+            stats_el.removeChild(stats_el.firstChild)
+
+        crear_stat(stats_el, contador1, "Remisiones en proceso")
+        crear_stat(stats_el, contador2, "Urgencia Vital (En proceso)", "verde")
+        crear_stat(stats_el, contador3, "Remisiones con estado", "naranja")
+        crear_stat(stats_el, contador_citas_tramite, "Citas en trámite", "morado")
+        crear_stat(stats_el, contador_citas_asignadas, "Citas con estado", "morado")
+        stats_el.style.display = "flex"
+
+        set_status(
+            "✅ Procesado. " + str(total_remisiones) + " remisiones, "
+            + str(total_aceptados_general) + " aceptados, "
+            + str(contador_citas_tramite) + " citas en trámite, "
+            + str(contador_citas_asignadas) + " citas con estado.",
+            "ok"
+        )
+        document.getElementById("download-btn").style.display = "inline-block"
+        document.getElementById("copy-btn").style.display = "inline-block"
+
+    except Exception as e:
+        set_status("❌ Error: " + str(e), "error")
+        set_turno("Error: " + str(e))
+        console.error(str(e))
+    finally:
+        mostrar_loading(False)
+
+
+# ---------- Descargar Excel ----------
+def descargar_resultado(event=None):
+    global resultado_bytes
+    if resultado_bytes is None:
+        return
+    try:
+        import js
+        arr = Uint8Array.new(len(resultado_bytes))
+        arr.assign(resultado_bytes)
+        blob = js.Blob.new([arr], {"type": "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"})
+        url = window.URL.createObjectURL(blob)
+        a = document.createElement("a")
+        a.href = url
+        a.download = "resultado_filtrado.xlsx"
+        document.body.appendChild(a)
+        a.click()
+        document.body.removeChild(a)
+        window.URL.revokeObjectURL(url)
+    except Exception as e:
+        set_status("❌ Error al descargar: " + str(e), "error")
+        console.error(str(e))
+
+
+# ---------- Copiar al portapapeles ----------
+async def copiar_entrega(event=None):
+    global texto_turno
+    if not texto_turno:
+        return
+    try:
+        nav = window.navigator
+        await nav.clipboard.writeText(texto_turno)
+        set_status("📋 Entrega copiada al portapapeles.", "ok")
+    except Exception as e:
+        try:
+            el = document.getElementById("turno")
+            range_ = document.createRange()
+            range_.selectNodeContents(el)
+            sel = window.getSelection()
+            sel.removeAllRanges()
+            sel.addRange(range_)
+            set_status("⚠️ No se pudo copiar. Texto seleccionado: pulsa Ctrl+C.", "loading")
+        except Exception as e2:
+            set_status("❌ No se pudo copiar: " + str(e), "error")
+
+
+# ---------- Registrar eventos ----------
+document.getElementById("process-btn").addEventListener("click", create_proxy(procesar_archivo))
+document.getElementById("download-btn").addEventListener("click", create_proxy(descargar_resultado))
+document.getElementById("copy-btn").addEventListener("click", create_proxy(copiar_entrega))
+
+console.log("✅ App lista. Botones registrados.")
+    </script>
+
+</body>
+</html>
